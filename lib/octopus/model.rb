@@ -29,6 +29,8 @@ If you are trying to scope everything to a specific shard, use Octopus.using ins
           EOF
         end
 
+        raise "Invalid shard" unless custom_octopus_connection || allowed_shard?(shard)
+
         if Octopus.enabled?
           clean_table_name
           Octopus::ScopeProxy.new(shard, self)
@@ -46,6 +48,21 @@ If you are trying to scope everything to a specific shard, use Octopus.using ins
         base.send(:alias_method, :==, :equality_with_octopus)
         base.send(:alias_method, :eql?, :==)
         base.send(:alias_method_chain, :perform_validations, :octopus)
+      end
+
+      def run_on_shard(&block)
+        if self.allowed_shards
+          valid_shard = self.class.connection_proxy.nested_shards_stack.reverse.find do |stack_shard|
+            self.class.allowed_shard?(stack_shard)
+          end
+          raise 'Valid shard not found' unless valid_shard
+          original_shard = self.current_shard
+          self.current_shard = valid_shard if valid_shard
+          super
+          self.current_shard = original_shard
+        else
+          super
+        end
       end
 
       def set_current_shard
@@ -102,6 +119,13 @@ If you are trying to scope everything to a specific shard, use Octopus.using ins
         self.allowed_shards += shards
       end
 
+      def allow_shard_group(*groups)
+        shards = groups.flat_map do |group|
+          Octopus.config["shards"][group].keys.map(&:to_sym)
+        end
+        allow_shard(*shards)
+      end
+
       def hijack_methods
         around_save :run_on_shard, :unless => lambda { self.class.custom_octopus_connection }
         after_initialize :set_current_shard
@@ -144,7 +168,7 @@ If you are trying to scope everything to a specific shard, use Octopus.using ins
         if custom_octopus_connection
           allowed_shards && shard && allowed_shards.include?(shard)
         else
-          true
+          !allowed_shards || allowed_shards.include?(shard)
         end
       end
 

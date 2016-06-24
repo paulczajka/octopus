@@ -513,6 +513,104 @@ describe Octopus::Model do
         end
       end
     end
+
+    context "with allowed_shard configured" do
+      it "works when using the allowed shard" do
+        MapleSyrup.using(:canada).create(:name => "Log Cabin")
+        expect(MapleSyrup.using(:canada).find_by_name("Log Cabin")).to_not be_nil
+      end
+
+      it "works in a block for the allowed shard" do
+        Octopus.using(:canada) do
+          MapleSyrup.create(:name => "Slopeside Syrup")
+        end
+
+        expect(MapleSyrup.using(:canada).find_by_name("Slopeside Syrup")).to_not be_nil
+      end
+
+      it "raises when using a disallowed shard" do
+        expect do
+          MapleSyrup.using(:brazil).create!(:name => "Auntie J's")
+        end.to raise_error('Invalid shard')
+      end
+
+      it "raises in a block for a disallowed shard" do
+        expect do
+          Octopus.using(:brazil) do
+            MapleSyrup.create!(:name => "Fadden's")
+          end
+        end.to raise_error('Valid shard not found')
+      end
+
+      it "uses the allowed shard in nested blocks of disallowed shards" do
+        Octopus.using(:canada) do
+          Octopus.using(:russia) do
+            Octopus.using(:brazil) do
+              MapleSyrup.create!(:name => "Crown")
+            end
+          end
+        end
+
+        expect(MapleSyrup.using(:canada).find_by_name("Crown")).to_not be_nil
+      end
+    end
+
+    context "with allowed_shard_group configured" do
+      it "works when using allowed shards" do
+        Province.using(:canada).create!(:name => "Prince Edward Island")
+        Province.using(:brazil).create!(:name => "Alagoas")
+        Province.using(:russia).create!(:name => "Chelyabinsk")
+
+        expect(Province.using(:canada).pluck(:name)).to eq(["Prince Edward Island"])
+          expect(Province.using(:brazil).pluck(:name)).to eq(["Alagoas"])
+          expect(Province.using(:russia).pluck(:name)).to eq(["Chelyabinsk"])
+        end
+
+        it "works in blocks of allowed shards" do
+          Octopus.using(:canada) do
+            Province.create!(:name => "Prince Edward Island")
+          end
+          Octopus.using(:brazil) do
+            Province.create!(:name => "Alagoas")
+          end
+          Octopus.using(:russia) do
+            Province.create!(:name => "Chelyabinsk")
+          end
+
+          expect(Province.using(:canada).pluck(:name)).to eq(["Prince Edward Island"])
+          expect(Province.using(:brazil).pluck(:name)).to eq(["Alagoas"])
+          expect(Province.using(:russia).pluck(:name)).to eq(["Chelyabinsk"])
+        end
+
+        it "raises when using disallowed shards" do
+          expect do
+              Province.using(:aug2009).create!(:name => "Prince Edward Island")
+          end.to raise_error('Invalid shard')
+        end
+
+        it "raises in blocks of disallowed shards" do
+          expect do
+            Octopus.using(:aug2010) do
+              Province.create!(:name => "Prince Edward Island")
+            end
+          end.to raise_error('Valid shard not found')
+        end
+
+        it "uses the inner-most valid shard in nested blocks of disallowed shards" do
+          Octopus.using(:brazil) do
+            Octopus.using(:aug2010) do
+              Octopus.using(:canada) do
+                Octopus.using(:aug2009) do
+                  Province.create!(:name => "British Columbia")
+                end
+              end
+            end
+          end
+
+          expect(Province.using(:canada).pluck(:name)).to eq(["British Columbia"])
+        end
+      end
+    end
   end
 
   describe 'custom connection' do

@@ -12,6 +12,7 @@ module Octopus
     CURRENT_SLAVE_GROUP_KEY = 'octopus.current_slave_group'.freeze
     CURRENT_LOAD_BALANCE_OPTIONS_KEY = 'octopus.current_load_balance_options'.freeze
     BLOCK_KEY = 'octopus.block'.freeze
+    NESTED_SHARDS_STACK = 'octopus.nested_shards_stack'.freeze
     LAST_CURRENT_SHARD_KEY = 'octopus.last_current_shard'.freeze
     FULLY_REPLICATED_KEY = 'octopus.fully_replicated'.freeze
 
@@ -187,6 +188,10 @@ module Octopus
 
     def last_current_shard=(last_current_shard)
       Thread.current[LAST_CURRENT_SHARD_KEY] = last_current_shard
+    end
+
+    def nested_shards_stack
+      Thread.current[NESTED_SHARDS_STACK] ||= [self.current_shard]
     end
 
     def fully_replicated?
@@ -500,7 +505,7 @@ module Octopus
       older_shard = current_shard
       older_slave_group = current_slave_group
       older_load_balance_options = current_load_balance_options
-
+      self.nested_shards_stack.push(shard)
 
       begin
         unless current_model && !current_model.allowed_shard?(shard)
@@ -511,6 +516,7 @@ module Octopus
         self.current_shard = older_shard
         self.current_slave_group = older_slave_group
         self.current_load_balance_options = older_load_balance_options
+        self.nested_shards_stack.pop
       end
     end
 

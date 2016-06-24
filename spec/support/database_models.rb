@@ -116,3 +116,13 @@ class Skill < ActiveRecord::Base
   validates_presence_of :mmorpg_player
   validates :name, :uniqueness => { :scope => :mmorpg_player_id }
 end
+
+# allowed shard group with an octopus-managed connection
+class Province < ActiveRecord::Base
+  allow_shard_group(:country_shards)
+end
+
+# allowed shard with an octopus-managed connection
+class MapleSyrup < ActiveRecord::Base
+  allow_shard(:canada)
+end

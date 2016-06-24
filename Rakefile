@@ -166,6 +166,14 @@ namespace :db do
           u.string :name
         end
       end
+
+      BlankModel.using(shard_symbol).connection.create_table(:provinces) do |u|
+        u.string :name
+      end
+
+      BlankModel.using(shard_symbol).connection.create_table(:maple_syrups) do |u|
+        u.string :name
+      end
     end
   end
 
