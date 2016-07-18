@@ -562,230 +562,229 @@ describe Octopus::Model do
         Province.using(:russia).create!(:name => "Chelyabinsk")
 
         expect(Province.using(:canada).pluck(:name)).to eq(["Prince Edward Island"])
-          expect(Province.using(:brazil).pluck(:name)).to eq(["Alagoas"])
-          expect(Province.using(:russia).pluck(:name)).to eq(["Chelyabinsk"])
+        expect(Province.using(:brazil).pluck(:name)).to eq(["Alagoas"])
+        expect(Province.using(:russia).pluck(:name)).to eq(["Chelyabinsk"])
+      end
+
+      it "works in blocks of allowed shards" do
+        Octopus.using(:canada) do
+          Province.create!(:name => "Prince Edward Island")
+        end
+        Octopus.using(:brazil) do
+          Province.create!(:name => "Alagoas")
+        end
+        Octopus.using(:russia) do
+          Province.create!(:name => "Chelyabinsk")
         end
 
-        it "works in blocks of allowed shards" do
-          Octopus.using(:canada) do
+        expect(Province.using(:canada).pluck(:name)).to eq(["Prince Edward Island"])
+        expect(Province.using(:brazil).pluck(:name)).to eq(["Alagoas"])
+        expect(Province.using(:russia).pluck(:name)).to eq(["Chelyabinsk"])
+      end
+
+      it "raises when using disallowed shards" do
+        expect do
+          Province.using(:aug2009).create!(:name => "Prince Edward Island")
+        end.to raise_error('Invalid shard')
+      end
+
+      it "raises in blocks of disallowed shards" do
+        expect do
+          Octopus.using(:aug2010) do
             Province.create!(:name => "Prince Edward Island")
           end
-          Octopus.using(:brazil) do
-            Province.create!(:name => "Alagoas")
-          end
-          Octopus.using(:russia) do
-            Province.create!(:name => "Chelyabinsk")
-          end
+        end.to raise_error('Valid shard not found')
+      end
 
-          expect(Province.using(:canada).pluck(:name)).to eq(["Prince Edward Island"])
-          expect(Province.using(:brazil).pluck(:name)).to eq(["Alagoas"])
-          expect(Province.using(:russia).pluck(:name)).to eq(["Chelyabinsk"])
-        end
-
-        it "raises when using disallowed shards" do
-          expect do
-              Province.using(:aug2009).create!(:name => "Prince Edward Island")
-          end.to raise_error('Invalid shard')
-        end
-
-        it "raises in blocks of disallowed shards" do
-          expect do
-            Octopus.using(:aug2010) do
-              Province.create!(:name => "Prince Edward Island")
-            end
-          end.to raise_error('Valid shard not found')
-        end
-
-        it "uses the inner-most valid shard in nested blocks of disallowed shards" do
-          Octopus.using(:brazil) do
-            Octopus.using(:aug2010) do
-              Octopus.using(:canada) do
-                Octopus.using(:aug2009) do
-                  Province.create!(:name => "British Columbia")
-                end
+      it "uses the inner-most valid shard in nested blocks of disallowed shards" do
+        Octopus.using(:brazil) do
+          Octopus.using(:aug2010) do
+            Octopus.using(:canada) do
+              Octopus.using(:aug2009) do
+                Province.create!(:name => "British Columbia")
               end
             end
           end
-
-          expect(Province.using(:canada).pluck(:name)).to eq(["British Columbia"])
         end
+
+        expect(Province.using(:canada).pluck(:name)).to eq(["British Columbia"])
       end
     end
   end
+end
 
-  describe 'custom connection' do
-    context 'by default' do
-      it 'with plain call should use custom connection' do
+describe 'custom connection' do
+  context 'by default' do
+    it 'with plain call should use custom connection' do
+      expect(CustomConnection.connection.current_database).to eq('octopus_shard_2')
+    end
+
+    it 'should ignore using called on relation' do
+      expect(CustomConnection.using(:postgresql_shard).connection.current_database).to eq('octopus_shard_2')
+    end
+
+    it 'should ignore Octopus.using block' do
+      Octopus.using(:postgresql_shard) do
         expect(CustomConnection.connection.current_database).to eq('octopus_shard_2')
-      end
-
-      it 'should ignore using called on relation' do
-        expect(CustomConnection.using(:postgresql_shard).connection.current_database).to eq('octopus_shard_2')
-      end
-
-      it 'should ignore Octopus.using block' do
-        Octopus.using(:postgresql_shard) do
-          expect(CustomConnection.connection.current_database).to eq('octopus_shard_2')
-        end
-      end
-
-      it 'should save to correct shard' do
-        expect { CustomConnection.create(:value => 'custom value') }.to change {
-          CustomConnection
-            .connection
-            .execute("select count(*) as ct from custom where value = 'custom value'")
-            .to_a.first.first
-        }.by 1
       end
     end
 
-    context 'with allowed_shards configured' do
-      before do
-        CustomConnection.allow_shard :postgresql_shard
-      end
+    it 'should save to correct shard' do
+      expect { CustomConnection.create(:value => 'custom value') }.to change {
+        CustomConnection
+          .connection
+          .execute("select count(*) as ct from custom where value = 'custom value'")
+          .to_a.first.first
+      }.by 1
+    end
+  end
 
-      it 'with plain call should use custom connection' do
+  context 'with allowed_shards configured' do
+    before do
+      CustomConnection.allow_shard :postgresql_shard
+    end
+
+    it 'with plain call should use custom connection' do
+      expect(CustomConnection.connection.current_database).to eq('octopus_shard_2')
+    end
+
+    it 'with using called on relation with allowed shard should use' do
+      expect(CustomConnection.using(:postgresql_shard).connection.current_database).to eq('octopus_shard_1')
+    end
+
+    it 'within Octopus.using block with allowed shard should use' do
+      Octopus.using(:postgresql_shard) do
+        expect(CustomConnection.connection.current_database).to eq('octopus_shard_1')
+      end
+    end
+
+    it 'with using called on relation with disallowed shard should not use' do
+      expect(CustomConnection.using(:brazil).connection.current_database).to eq('octopus_shard_2')
+    end
+
+    it 'within Octopus.using block with disallowed shard should not use' do
+      Octopus.using(:brazil) do
         expect(CustomConnection.connection.current_database).to eq('octopus_shard_2')
       end
+    end
 
-      it 'with using called on relation with allowed shard should use' do
-        expect(CustomConnection.using(:postgresql_shard).connection.current_database).to eq('octopus_shard_1')
-      end
+    it 'should save to correct shard' do
+      expect { CustomConnection.create(:value => 'custom value') }.to change {
+        CustomConnection
+          .connection
+          .execute("select count(*) as ct from custom where value = 'custom value'")
+          .to_a.first.first
+      }.by 1
+    end
 
-      it 'within Octopus.using block with allowed shard should use' do
-        Octopus.using(:postgresql_shard) do
-          expect(CustomConnection.connection.current_database).to eq('octopus_shard_1')
-        end
-      end
+    it 'should clean up correctly' do
+      User.create!(:name => 'CleanUser')
+      CustomConnection.using(:postgresql_shard).first
+      expect(User.first).not_to be_nil
+    end
 
-      it 'with using called on relation with disallowed shard should not use' do
-        expect(CustomConnection.using(:brazil).connection.current_database).to eq('octopus_shard_2')
-      end
+    it 'should clean up correctly even inside block' do
+      User.create!(:name => 'CleanUser')
 
-      it 'within Octopus.using block with disallowed shard should not use' do
-        Octopus.using(:brazil) do
-          expect(CustomConnection.connection.current_database).to eq('octopus_shard_2')
-        end
-      end
-
-      it 'should save to correct shard' do
-        expect { CustomConnection.create(:value => 'custom value') }.to change {
-          CustomConnection
-            .connection
-            .execute("select count(*) as ct from custom where value = 'custom value'")
-            .to_a.first.first
-        }.by 1
-      end
-
-      it 'should clean up correctly' do
-        User.create!(:name => 'CleanUser')
-        CustomConnection.using(:postgresql_shard).first
+      Octopus.using(:master) do
+        CustomConnection.using(:postgresql_shard).connection.execute('select count(*) from users')
         expect(User.first).not_to be_nil
       end
-
-      it 'should clean up correctly even inside block' do
-        User.create!(:name => 'CleanUser')
-
-        Octopus.using(:master) do
-          CustomConnection.using(:postgresql_shard).connection.execute('select count(*) from users')
-          expect(User.first).not_to be_nil
-        end
-      end
-    end
-
-    describe 'clear_active_connections!' do
-      it 'should not leak connection' do
-        CustomConnection.create(:value => 'custom value')
-
-        # This is what Rails, Sidekiq etc call--this normally handles all connection pools in the app
-        expect { ActiveRecord::Base.clear_active_connections! }
-          .to change { CustomConnection.connection_pool.active_connection? }
-
-        expect(CustomConnection.connection_pool.active_connection?).to be_falsey
-      end
     end
   end
 
-  describe 'when using set_table_name' do
-    it 'should work correctly' do
-      Bacon.using(:brazil).create!(:name => 'YUMMMYYYY')
+  describe 'clear_active_connections!' do
+    it 'should not leak connection' do
+      CustomConnection.create(:value => 'custom value')
+
+      # This is what Rails, Sidekiq etc call--this normally handles all connection pools in the app
+      expect { ActiveRecord::Base.clear_active_connections! }
+        .to change { CustomConnection.connection_pool.active_connection? }
+
+      expect(CustomConnection.connection_pool.active_connection?).to be_falsey
+    end
+  end
+end
+
+describe 'when using set_table_name' do
+  it 'should work correctly' do
+    Bacon.using(:brazil).create!(:name => 'YUMMMYYYY')
+  end
+
+  it 'should work correctly with a block' do
+    Cheese.using(:brazil).create!(:name => 'YUMMMYYYY')
+  end
+end
+
+describe 'when using table_name=' do
+  it 'should work correctly' do
+    Ham.using(:brazil).create!(:name => 'YUMMMYYYY')
+  end
+end
+
+describe 'when using a environment with a single adapter' do
+  it 'should not clean the table name' do
+    OctopusHelper.using_environment :production_fully_replicated do
+      expect(Keyboard).not_to receive(:reset_table_name)
+      Keyboard.using(:master).create!(:name => 'Master Cat')
+    end
+  end
+end
+
+describe 'when you have joins/include' do
+  before(:each) do
+    @client1 = Client.using(:brazil).create(:name => 'Thiago')
+
+    Octopus.using(:canada) do
+      @client2 = Client.create(:name => 'Mike')
+      @client3 = Client.create(:name => 'Joao')
+      @item1 = Item.create(:client => @client2, :name => 'Item 1')
+      @item2 = Item.create(:client => @client2, :name => 'Item 2')
+      @item3 = Item.create(:client => @client3, :name => 'Item 3')
+      @part1 = Part.create(:item => @item1, :name => 'Part 1')
+      @part2 = Part.create(:item => @item1, :name => 'Part 2')
+      @part3 = Part.create(:item => @item2, :name => 'Part 3')
     end
 
-    it 'should work correctly with a block' do
-      Cheese.using(:brazil).create!(:name => 'YUMMMYYYY')
+    @item4 = Item.using(:brazil).create(:client => @client1, :name => 'Item 4')
+  end
+
+  it 'should work using the rails 3.x syntax' do
+    items = Item.using(:canada).joins(:client).where("clients.id = #{@client2.id}").all
+    expect(items).to eq([@item1, @item2])
+  end
+
+  it 'should work for include also, rails 3.x syntax' do
+    items = Item.using(:canada).includes(:client).where(:clients => { :id => @client2.id }).all
+    expect(items).to eq([@item1, @item2])
+  end
+end
+
+describe 'ActiveRecord::Base Validations' do
+  it 'should work correctly when using validations' do
+    @key = Keyboard.create!(:name => 'Key')
+    expect { Keyboard.using(:brazil).create!(:name => 'Key') }.not_to raise_error
+    expect { Keyboard.create!(:name => 'Key') }.to raise_error
+  end
+
+  it 'should work correctly when using validations with using syntax' do
+    @key = Keyboard.using(:brazil).create!(:name => 'Key')
+    expect { Keyboard.create!(:name => 'Key') }.not_to raise_error
+    expect { Keyboard.using(:brazil).create!(:name => 'Key') }.to raise_error
+  end
+end
+
+describe '#replicated_model method' do
+  it 'should be replicated' do
+    OctopusHelper.using_environment :production_replicated do
+      expect(ActiveRecord::Base.connection_proxy.instance_variable_get(:@replicated)).to be true
     end
   end
 
-  describe 'when using table_name=' do
-    it 'should work correctly' do
-      Ham.using(:brazil).create!(:name => 'YUMMMYYYY')
-    end
-  end
-
-  describe 'when using a environment with a single adapter' do
-    it 'should not clean the table name' do
-      OctopusHelper.using_environment :production_fully_replicated do
-        expect(Keyboard).not_to receive(:reset_table_name)
-        Keyboard.using(:master).create!(:name => 'Master Cat')
-      end
-    end
-  end
-
-  describe 'when you have joins/include' do
-    before(:each) do
-      @client1 = Client.using(:brazil).create(:name => 'Thiago')
-
-      Octopus.using(:canada) do
-        @client2 = Client.create(:name => 'Mike')
-        @client3 = Client.create(:name => 'Joao')
-        @item1 = Item.create(:client => @client2, :name => 'Item 1')
-        @item2 = Item.create(:client => @client2, :name => 'Item 2')
-        @item3 = Item.create(:client => @client3, :name => 'Item 3')
-        @part1 = Part.create(:item => @item1, :name => 'Part 1')
-        @part2 = Part.create(:item => @item1, :name => 'Part 2')
-        @part3 = Part.create(:item => @item2, :name => 'Part 3')
-      end
-
-      @item4 = Item.using(:brazil).create(:client => @client1, :name => 'Item 4')
-    end
-
-    it 'should work using the rails 3.x syntax' do
-      items = Item.using(:canada).joins(:client).where("clients.id = #{@client2.id}").all
-      expect(items).to eq([@item1, @item2])
-    end
-
-    it 'should work for include also, rails 3.x syntax' do
-      items = Item.using(:canada).includes(:client).where(:clients => { :id => @client2.id }).all
-      expect(items).to eq([@item1, @item2])
-    end
-  end
-
-  describe 'ActiveRecord::Base Validations' do
-    it 'should work correctly when using validations' do
-      @key = Keyboard.create!(:name => 'Key')
-      expect { Keyboard.using(:brazil).create!(:name => 'Key') }.not_to raise_error
-      expect { Keyboard.create!(:name => 'Key') }.to raise_error
-    end
-
-    it 'should work correctly when using validations with using syntax' do
-      @key = Keyboard.using(:brazil).create!(:name => 'Key')
-      expect { Keyboard.create!(:name => 'Key') }.not_to raise_error
-      expect { Keyboard.using(:brazil).create!(:name => 'Key') }.to raise_error
-    end
-  end
-
-  describe '#replicated_model method' do
-    it 'should be replicated' do
-      OctopusHelper.using_environment :production_replicated do
-        expect(ActiveRecord::Base.connection_proxy.instance_variable_get(:@replicated)).to be true
-      end
-    end
-
-    it 'should mark the Cat model as replicated' do
-      OctopusHelper.using_environment :production_replicated do
-        expect(User.replicated).to be_falsey
-        expect(Cat.replicated).to be true
-      end
+  it 'should mark the Cat model as replicated' do
+    OctopusHelper.using_environment :production_replicated do
+      expect(User.replicated).to be_falsey
+      expect(Cat.replicated).to be true
     end
   end
 end
